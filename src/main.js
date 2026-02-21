@@ -1,9 +1,15 @@
+// ── Load env vars before ANY other require ─────────────────────────────────
+// In development this reads .env from the project root.
+// In a packaged production build, set OS environment variables instead.
+require("dotenv").config();
+
 const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 
 if (require("electron-squirrel-startup")) app.quit();
 
 let db = null;
+let deviceService = null;
 
 // const isDev = true; // change later
 // if (isDev) {
@@ -41,6 +47,10 @@ app.whenReady().then(() => {
   // __dirname in the bundle = .vite/build/, so go up to project root
   const dbPath = path.join(app.getAppPath(), "src", "database", "db.js");
   db = require(dbPath);
+
+  // Device service is safe to require after dotenv has loaded env vars
+  const deviceServicePath = path.join(app.getAppPath(), "src", "device", "deviceService.js");
+  deviceService = require(deviceServicePath);
 
   registerIpcHandlers();
   createWindow();
@@ -103,4 +113,47 @@ function registerIpcHandlers() {
   ipcMain.handle("members:markNotificationSent", (_, id) =>
     db.markNotificationSent(id),
   );
+
+  // ── Hikvision Device ──────────────────────────────────────────────
+  // All handlers run in main process — credentials NEVER reach the renderer.
+
+  /**
+   * Check if the device is reachable and return its info.
+   * Used by the Settings page to show connection status.
+   */
+  ipcMain.handle("hikvision:getStatus", async () => {
+    try {
+      return await deviceService.getDeviceStatus();
+    } catch (err) {
+      console.error("[IPC] hikvision:getStatus error:", err.message);
+      return { success: false, synced: false, error: err.message };
+    }
+  });
+
+  /**
+   * Remotely open the door / turnstile from the app UI.
+   * Accepts an optional doorNo (defaults to HIKVISION_DOOR_NO env var).
+   */
+  ipcMain.handle("hikvision:openDoor", async (_, doorNo) => {
+    try {
+      return await deviceService.openDoor(doorNo);
+    } catch (err) {
+      console.error("[IPC] hikvision:openDoor error:", err.message);
+      return { success: false, synced: false, error: err.message };
+    }
+  });
+
+  /**
+   * Manually push a member's data to the device.
+   * Useful after network outages or for re-syncing a specific member.
+   * Expects a member payload matching buildDeviceUserPayload() shape.
+   */
+  ipcMain.handle("hikvision:syncMember", async (_, memberPayload) => {
+    try {
+      return await deviceService.addUser(memberPayload);
+    } catch (err) {
+      console.error("[IPC] hikvision:syncMember error:", err.message);
+      return { success: false, synced: false, error: err.message };
+    }
+  });
 }
