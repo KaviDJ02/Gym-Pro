@@ -1,7 +1,5 @@
-// ── Load env vars before ANY other require ─────────────────────────────────
-// In development this reads .env from the project root.
-// In a packaged production build, set OS environment variables instead.
-require("dotenv").config();
+// dotenv is loaded inside app.whenReady() below — using app.getAppPath() gives
+// a reliable absolute path to .env that works in both dev and packaged builds.
 
 const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
@@ -43,8 +41,18 @@ const createWindow = () => {
 };
 
 app.whenReady().then(() => {
-  // ✅ KEY FIX: Load db.js using absolute path from project root
-  // __dirname in the bundle = .vite/build/, so go up to project root
+  // ── Load .env FIRST with an explicit path ───────────────────────────────
+  // app.getAppPath() is the project root in dev AND in packaged builds,
+  // unlike process.cwd() which can differ in production installers.
+  const envPath = path.join(app.getAppPath(), ".env");
+  const dotenvResult = require("dotenv").config({ path: envPath });
+  if (dotenvResult.error) {
+    console.warn("[Main] .env not loaded:", dotenvResult.error.message);
+  } else {
+    console.log("[Main] .env loaded from:", envPath);
+  }
+
+  // ── KEY FIX: Load db.js using absolute path from project root ──────────
   const dbPath = path.join(app.getAppPath(), "src", "database", "db.js");
   db = require(dbPath);
 
@@ -79,7 +87,6 @@ function registerIpcHandlers() {
   ipcMain.handle("members:renew", (_, d) => db.renewMember(d));
 
   // ── Attendance ────────────────────────────────────────────────────
-  ipcMain.handle("attendance:scan", (_, fid) => db.processScan(fid));
   ipcMain.handle("attendance:getToday", () => db.getTodayAttendance());
   ipcMain.handle("attendance:getByDate", (_, date) =>
     db.getAttendanceByDate(date),
@@ -87,6 +94,8 @@ function registerIpcHandlers() {
   ipcMain.handle("attendance:getByMember", (_, id) =>
     db.getMemberAttendance(id),
   );
+
+  // (attendance:scan removed — attendance is now logged by the Hikvision device)
 
   // ── Payments ──────────────────────────────────────────────────────
   ipcMain.handle("payments:add", (_, p) => db.addPayment(p));

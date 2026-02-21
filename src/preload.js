@@ -15,7 +15,6 @@ contextBridge.exposeInMainWorld("gymAPI", {
   renewMember: (d) => ipcRenderer.invoke("members:renew", d),
 
   // Attendance
-  scanFingerprint: (fid) => ipcRenderer.invoke("attendance:scan", fid),
   getTodayAttendance: () => ipcRenderer.invoke("attendance:getToday"),
   getAttendanceByDate: (date) =>
     ipcRenderer.invoke("attendance:getByDate", date),
